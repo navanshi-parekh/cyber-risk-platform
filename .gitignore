@@ -1,0 +1,24 @@
+# Python & Virtual Environments
+.venv/
+__pycache__/
+*.py[cod]
+*$py.class
+*.sqlite3
+cyber_risk.db
+.pytest_cache/
+
+# Node & Next.js Build Artifacts
+node_modules/
+frontend/node_modules/
+.next/
+frontend/.next/
+out/
+build/
+dist/
+*.log
+
+# Environment Variables & OS Files
+.env
+.env.local
+.DS_Store
+Thumbs.db

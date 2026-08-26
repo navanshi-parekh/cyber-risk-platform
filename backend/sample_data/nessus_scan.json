@@ -1,0 +1,23 @@
+[
+  {
+    "hostname": "10.14.30.12",
+    "vulnerabilities": [
+      {
+        "plugin_name": "Netlogon Elevation of Privilege (Zerologon)",
+        "cvss3_base_score": 10.0,
+        "severity": 4,
+        "cve": ["CVE-2020-1472"],
+        "port": 445,
+        "solution": "Apply Microsoft Security Bulletin MS20-0810 and enforce secure Netlogon."
+      },
+      {
+        "plugin_name": "OpenSSH Terrapin Prefix Truncation Attack",
+        "cvss3_base_score": 5.9,
+        "severity": 2,
+        "cve": ["CVE-2023-48795"],
+        "port": 22,
+        "solution": "Disable ChaCha20-Poly1305 and CBC-etm ciphers in sshd_config."
+      }
+    ]
+  }
+]

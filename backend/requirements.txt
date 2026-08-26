@@ -1,0 +1,22 @@
+# FastAPI & Server
+fastapi
+uvicorn[standard]
+pydantic
+pydantic-settings
+python-multipart
+
+# Database & ORM
+SQLAlchemy
+aiosqlite
+alembic
+
+# Mathematical Modeling, FAIR & Optimization
+numpy
+scipy
+pulp
+
+# HTTP & Utilities
+httpx
+reportlab
+jinja2
+pytest
