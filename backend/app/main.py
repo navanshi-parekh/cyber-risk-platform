@@ -109,6 +109,14 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+@app.get("/health")
+async def health_check() -> dict:
+    return {"status": "ok", "service": settings.PROJECT_NAME}
+
+@app.get(f"{settings.API_V1_STR}/health")
+async def api_health_check() -> dict:
+    return {"status": "ok", "service": settings.PROJECT_NAME, "api": settings.API_V1_STR}
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.BACKEND_CORS_ORIGINS,

@@ -154,7 +154,7 @@ export default function TechnicalSOCPage() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 p-6 space-y-6">
+    <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 p-6 space-y-6">
       <header className="flex flex-col md:flex-row md:items-center justify-between pb-6 border-b border-slate-800 gap-4">
         <div className="flex items-center gap-3">
           <div className="p-2.5 bg-cyan-500/10 border border-cyan-500/30 rounded-xl">
@@ -162,7 +162,7 @@ export default function TechnicalSOCPage() {
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <h1 className="text-xl font-bold tracking-tight text-slate-100">
+              <h1 className="text-xl font-bold tracking-tight text-slate-900 dark:text-slate-100">
                 Technical SOC Telemetry & Threat Ingestion
               </h1>
               <span className="text-[10px] px-2 py-0.5 rounded-full bg-cyan-500/10 text-cyan-400 border border-cyan-500/30 font-mono">
@@ -202,7 +202,7 @@ export default function TechnicalSOCPage() {
 
           <Link
             href="/dashboard"
-            className="flex items-center gap-1.5 px-3.5 py-2 bg-slate-900 border border-slate-700 hover:bg-slate-800 text-xs font-medium rounded-lg text-slate-300 transition"
+            className="flex items-center gap-1.5 px-3.5 py-2 bg-slate-100 dark:bg-slate-50 dark:bg-slate-900border border-slate-300 dark:border-slate-700 hover:bg-slate-200 dark:hover:bg-slate-100 dark:bg-slate-800 text-xs font-medium rounded-lg text-slate-700 dark:text-slate-300 transition"
           >
             <LayoutDashboard className="w-3.5 h-3.5" />
             <span>Executive View</span>
@@ -218,15 +218,15 @@ export default function TechnicalSOCPage() {
       )}
 
       <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-4">
+        <div className="bg-white dark:bg-slate-900/90 border border-slate-200 dark:border-slate-800 rounded-xl p-4">
           <div className="flex items-center justify-between text-xs text-slate-400">
             <span>Total Ingested Findings</span>
             <Layers className="w-4 h-4 text-cyan-400" />
           </div>
-          <div className="text-2xl font-bold font-mono text-slate-100 mt-2">{totalFindings} Findings</div>
+          <div className="text-2xl font-bold font-mono text-slate-900 dark:text-slate-100 mt-2">{totalFindings} Findings</div>
         </div>
 
-        <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-4">
+        <div className="bg-white dark:bg-slate-900/90 border border-slate-200 dark:border-slate-800 rounded-xl p-4">
           <div className="flex items-center justify-between text-xs text-slate-400">
             <span>CISA KEV Weaponized</span>
             <Flame className="w-4 h-4 text-rose-500" />
@@ -234,7 +234,7 @@ export default function TechnicalSOCPage() {
           <div className="text-2xl font-bold font-mono text-rose-400 mt-2">{kevCount} Weaponized</div>
         </div>
 
-        <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-4">
+        <div className="bg-white dark:bg-slate-900/90 border border-slate-200 dark:border-slate-800 rounded-xl p-4">
           <div className="flex items-center justify-between text-xs text-slate-400">
             <span>Critical Severity (CVSS ≥ 9.0)</span>
             <AlertOctagon className="w-4 h-4 text-red-400" />
@@ -242,7 +242,7 @@ export default function TechnicalSOCPage() {
           <div className="text-2xl font-bold font-mono text-red-400 mt-2">{criticalCount} Critical</div>
         </div>
 
-        <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-4">
+        <div className="bg-white dark:bg-slate-900/90 border border-slate-200 dark:border-slate-800 rounded-xl p-4">
           <div className="flex items-center justify-between text-xs text-slate-400">
             <span>Mean FAIR Vulnerability Probability</span>
             <ShieldAlert className="w-4 h-4 text-amber-400" />
@@ -253,7 +253,7 @@ export default function TechnicalSOCPage() {
 
       <section className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         <div className="lg:col-span-5 flex flex-col gap-4">
-          <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-4 space-y-3">
+          <div className="bg-white dark:bg-slate-900/90 border border-slate-200 dark:border-slate-800 rounded-xl p-4 space-y-3">
             <div className="flex items-center gap-2">
               <div className="relative flex-1">
                 <Search className="w-4 h-4 absolute left-3 top-2.5 text-slate-500" />
@@ -262,14 +262,14 @@ export default function TechnicalSOCPage() {
                   placeholder="Search CVE, Asset IP..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-lg pl-9 pr-3 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-cyan-500"
+                  className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-800 rounded-lg pl-9 pr-3 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-cyan-500"
                 />
               </div>
 
               <select
                 value={severityFilter}
                 onChange={(e) => setSeverityFilter(e.target.value)}
-                className="bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs text-slate-300"
+                className="bg-slate-50 dark:bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs text-slate-300"
               >
                 <option value="ALL">All</option>
                 <option value="KEV">CISA KEV</option>
@@ -287,7 +287,7 @@ export default function TechnicalSOCPage() {
                     className={`p-3.5 rounded-xl border cursor-pointer transition space-y-1.5 ${
                       isSelected
                         ? "bg-cyan-950/30 border-cyan-500/50 shadow-sm"
-                        : "bg-slate-950/60 border-slate-800/80 hover:border-slate-700"
+                        : "bg-slate-50 dark:bg-slate-950/60 border-slate-800/80 hover:border-slate-700"
                     }`}
                   >
                     <div className="flex items-center justify-between gap-2">
@@ -326,13 +326,13 @@ export default function TechnicalSOCPage() {
         <div className="lg:col-span-7 flex flex-col gap-4">
           {selectedFinding ? (
             <>
-              <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-5 space-y-4">
+              <div className="bg-white dark:bg-slate-900/90 border border-slate-200 dark:border-slate-800 rounded-xl p-5 space-y-4">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-3 border-b border-slate-800 gap-2">
                   <div>
-                    <span className="text-xs font-mono px-2 py-0.5 bg-slate-800 text-cyan-400 rounded">
+                    <span className="text-xs font-mono px-2 py-0.5 bg-slate-100 dark:bg-slate-800 text-cyan-400 rounded">
                       {selectedFinding.asset_ip}:{selectedFinding.port}
                     </span>
-                    <h2 className="text-base font-bold text-slate-100 mt-1">{selectedFinding.vulnerability_name}</h2>
+                    <h2 className="text-base font-bold text-slate-900 dark:text-slate-100 mt-1">{selectedFinding.vulnerability_name}</h2>
                   </div>
                   <div className="text-right">
                     <div className="text-xs font-mono text-slate-400">FAIR Likelihood</div>
@@ -342,28 +342,28 @@ export default function TechnicalSOCPage() {
                   </div>
                 </div>
 
-                <div className="text-xs text-slate-300 leading-relaxed bg-slate-950 p-3 rounded-lg border border-slate-800/80">
+                <div className="text-xs text-slate-300 leading-relaxed bg-slate-50 dark:bg-slate-950 p-3 rounded-lg border border-slate-800/80">
                   {selectedFinding.description}
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                  <div className="bg-slate-950 p-3 rounded-lg border border-slate-800/80">
+                  <div className="bg-slate-50 dark:bg-slate-950 p-3 rounded-lg border border-slate-800/80">
                     <span className="text-[10px] text-slate-500">CVSS v3.1</span>
-                    <div className="text-lg font-bold font-mono text-slate-100 mt-0.5">{selectedFinding.cvss_score.toFixed(1)}</div>
+                    <div className="text-lg font-bold font-mono text-slate-900 dark:text-slate-100 mt-0.5">{selectedFinding.cvss_score.toFixed(1)}</div>
                   </div>
-                  <div className="bg-slate-950 p-3 rounded-lg border border-slate-800/80">
+                  <div className="bg-slate-50 dark:bg-slate-950 p-3 rounded-lg border border-slate-800/80">
                     <span className="text-[10px] text-slate-500">EPSS 30-Day</span>
                     <div className="text-lg font-bold font-mono text-cyan-400 mt-0.5">{(selectedFinding.epss_probability * 100).toFixed(2)}%</div>
                   </div>
-                  <div className="bg-slate-950 p-3 rounded-lg border border-slate-800/80">
+                  <div className="bg-slate-50 dark:bg-slate-950 p-3 rounded-lg border border-slate-800/80">
                     <span className="text-[10px] text-slate-500">CISA KEV</span>
                     <div className="text-lg font-bold font-mono text-rose-400 mt-0.5">{selectedFinding.is_cisa_kev ? "WEAPONIZED" : "NOT LISTED"}</div>
                   </div>
                 </div>
               </div>
 
-              <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-5 space-y-3">
-                <div className="p-3.5 bg-slate-950/80 border border-cyan-900/40 rounded-xl space-y-1.5">
+              <div className="bg-white dark:bg-slate-900/90 border border-slate-200 dark:border-slate-800 rounded-xl p-5 space-y-3">
+                <div className="p-3.5 bg-slate-50 dark:bg-slate-950/80 border border-cyan-900/40 rounded-xl space-y-1.5">
                   <div className="flex items-center gap-2 text-xs font-semibold text-emerald-400">
                     <CheckCircle2 className="w-4 h-4" />
                     <span>Vendor Solution</span>
@@ -378,7 +378,7 @@ export default function TechnicalSOCPage() {
                       href={`https://nvd.nist.gov/vuln/detail/${cve}`}
                       target="_blank"
                       rel="noreferrer"
-                      className="flex items-center gap-1 text-xs font-mono px-2 py-0.5 bg-slate-900 border border-slate-700 hover:border-cyan-500 text-cyan-300 rounded transition"
+                      className="flex items-center gap-1 text-xs font-mono px-2 py-0.5 bg-slate-50 dark:bg-slate-900border border-slate-700 hover:border-cyan-500 text-cyan-300 rounded transition"
                     >
                       <span>{cve}</span>
                       <ExternalLink className="w-2.5 h-2.5" />

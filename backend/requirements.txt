@@ -20,3 +20,6 @@ httpx
 reportlab
 jinja2
 pytest
+
+# AI CISO Agent
+anthropic

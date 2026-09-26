@@ -17,7 +17,7 @@ import { formatINR } from "@/lib/utils";
 
 const ReactECharts = dynamic(() => import("echarts-for-react"), {
   ssr: false,
-  loading: () => <div className="flex items-center justify-center h-48 text-xs text-slate-500">Loading Plot...</div>,
+  loading: () => <div className="flex items-center justify-center h-48 text-xs text-slate-600 dark:text-slate-500">Loading Plot...</div>,
 });
 
 export default function DynamicSimulationsPage() {
@@ -86,23 +86,23 @@ export default function DynamicSimulationsPage() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 p-6 space-y-6">
-      <header className="flex flex-col md:flex-row md:items-center justify-between pb-6 border-b border-slate-800 gap-4">
+    <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 p-6 space-y-6">
+      <header className="flex flex-col md:flex-row md:items-center justify-between pb-6 border-b border-slate-200 dark:border-slate-800 gap-4">
         <div className="flex items-center gap-3">
           <div className="p-2.5 bg-rose-500/10 border border-rose-500/30 rounded-xl">
             <Sliders className="w-6 h-6 text-rose-400" />
           </div>
           <div>
-            <h1 className="text-xl font-bold tracking-tight text-slate-100">
+            <h1 className="text-xl font-bold tracking-tight text-slate-900 dark:text-slate-100">
               What-If Dynamic Threat & Scenario Simulator
             </h1>
-            <p className="text-xs text-slate-400">Simulate Patch Delays & Exploit Multipliers</p>
+            <p className="text-xs text-slate-600 dark:text-slate-400">Simulate Patch Delays & Exploit Multipliers</p>
           </div>
         </div>
 
         <Link
           href="/dashboard"
-          className="flex items-center gap-1.5 px-3.5 py-2 bg-slate-900 border border-slate-700 hover:bg-slate-800 text-xs font-medium rounded-lg text-slate-300 transition"
+          className="flex items-center gap-1.5 px-3.5 py-2 bg-white dark:bg-slate-900 border border-slate-700 hover:bg-slate-800 text-xs font-medium rounded-lg text-slate-300 transition"
         >
           <LayoutDashboard className="w-3.5 h-3.5" />
           <span>Executive View</span>
@@ -110,30 +110,30 @@ export default function DynamicSimulationsPage() {
       </header>
 
       <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-4">
-          <span className="text-xs text-slate-400">Simulated EAL</span>
+        <div className="bg-white dark:bg-slate-900/90 border border-slate-200 dark:border-slate-800 rounded-xl p-4">
+          <span className="text-xs text-slate-600 dark:text-slate-400">Simulated EAL</span>
           <div className="text-2xl font-bold font-mono text-rose-400 mt-2">{formatINR(calculatedMetrics.simulatedEal)}</div>
         </div>
-        <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-4">
-          <span className="text-xs text-slate-400">Simulated 95% VaR</span>
+        <div className="bg-white dark:bg-slate-900/90 border border-slate-200 dark:border-slate-800 rounded-xl p-4">
+          <span className="text-xs text-slate-600 dark:text-slate-400">Simulated 95% VaR</span>
           <div className="text-2xl font-bold font-mono text-red-400 mt-2">{formatINR(calculatedMetrics.simulatedVar95)}</div>
         </div>
-        <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-4">
-          <span className="text-xs text-slate-400">Exposure Multiplier</span>
+        <div className="bg-white dark:bg-slate-900/90 border border-slate-200 dark:border-slate-800 rounded-xl p-4">
+          <span className="text-xs text-slate-600 dark:text-slate-400">Exposure Multiplier</span>
           <div className="text-2xl font-bold font-mono text-amber-400 mt-2">{calculatedMetrics.riskMultiplier}x</div>
         </div>
-        <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-4">
-          <span className="text-xs text-slate-400">Baseline EAL</span>
+        <div className="bg-white dark:bg-slate-900/90 border border-slate-200 dark:border-slate-800 rounded-xl p-4">
+          <span className="text-xs text-slate-600 dark:text-slate-400">Baseline EAL</span>
           <div className="text-2xl font-bold font-mono text-slate-200 mt-2">{formatINR(baselineEal)}</div>
         </div>
       </section>
 
       <section className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        <div className="lg:col-span-7 bg-slate-900/90 border border-slate-800 rounded-xl p-4 h-[420px]">
+        <div className="lg:col-span-7 bg-white dark:bg-slate-900/90 border border-slate-200 dark:border-slate-800 rounded-xl p-4 h-[420px]">
           <ReactECharts option={chartOption} style={{ height: "340px", width: "100%" }} />
         </div>
 
-        <div className="lg:col-span-5 bg-slate-900/90 border border-slate-800 rounded-xl p-5 space-y-5">
+        <div className="lg:col-span-5 bg-white dark:bg-slate-900/90 border border-slate-200 dark:border-slate-800 rounded-xl p-5 space-y-5">
           <div className="space-y-2">
             <div className="flex justify-between text-xs">
               <span>Patch Remediation Delay</span>

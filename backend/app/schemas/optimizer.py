@@ -18,6 +18,14 @@ class OptimizationRequest(BaseModel):
     candidate_controls: List[ControlItemSchema]
 
 
+class SuggestControlsRequest(BaseModel):
+    total_findings: int = Field(..., ge=0)
+    critical_count: int = Field(..., ge=0)
+    kev_count: int = Field(..., ge=0)
+    mean_fair_vuln_prob: float = Field(..., ge=0.0, le=1.0)
+    baseline_eal: float = Field(..., ge=0.0)
+
+
 class OptimizationResponse(BaseModel):
     budget_constraint: float
     total_spend: float

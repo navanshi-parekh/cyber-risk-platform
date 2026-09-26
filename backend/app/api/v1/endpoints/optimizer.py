@@ -1,12 +1,50 @@
+from typing import List
 from fastapi import APIRouter, HTTPException
-from backend.app.schemas.optimizer import OptimizationRequest, OptimizationResponse
+from backend.app.schemas.optimizer import (
+    OptimizationRequest,
+    OptimizationResponse,
+    SuggestControlsRequest,
+    ControlItemSchema,
+)
 from backend.app.services.optimizer.milp_solver import (
     SecurityInvestmentOptimizer,
     CandidateControl,
 )
+from backend.app.services.optimizer.control_recommender import derive_controls_from_scan
 
 router = APIRouter()
 optimizer = SecurityInvestmentOptimizer()
+
+
+@router.post("/suggest-controls", response_model=List[ControlItemSchema])
+async def suggest_controls_from_scan(payload: SuggestControlsRequest):
+    """
+    Derives a candidate control portfolio from real ingested scan telemetry
+    (finding counts, KEV weaponization, mean FAIR vulnerability) instead of
+    a static demo list, so optimizer recommendations track actual exposure.
+    """
+    try:
+        controls = derive_controls_from_scan(
+            total_findings=payload.total_findings,
+            critical_count=payload.critical_count,
+            kev_count=payload.kev_count,
+            mean_fair_vuln_prob=payload.mean_fair_vuln_prob,
+            baseline_eal=payload.baseline_eal,
+        )
+        return [
+            ControlItemSchema(
+                control_id=c.control_id,
+                name=c.name,
+                category=c.category,
+                cost=c.cost,
+                risk_reduction_delta=c.risk_reduction_delta,
+                framework_mapping=c.framework_mapping,
+                mandatory=c.mandatory,
+            )
+            for c in controls
+        ]
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 
 @router.post("/optimize", response_model=OptimizationResponse)

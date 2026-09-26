@@ -13,8 +13,11 @@ import {
   Download,
   CheckCircle2,
   Building2,
-  RefreshCw
+  RefreshCw,
+  Moon,
+  Sun
 } from "lucide-react";
+import { useTheme } from "@/lib/theme-context";
 
 interface HeaderProps {
   onRefreshSimulation?: () => void;
@@ -26,6 +29,7 @@ export const Header: React.FC<HeaderProps> = ({
   isSimulating = false,
 }) => {
   const pathname = usePathname();
+  const { theme, toggleTheme } = useTheme();
   const [isExporting, setIsExporting] = useState(false);
   const [exportSuccess, setExportSuccess] = useState(false);
 
@@ -100,26 +104,29 @@ export const Header: React.FC<HeaderProps> = ({
   };
 
   return (
-    <header className="w-full bg-slate-950/80 backdrop-blur-md border-b border-slate-800 sticky top-0 z-50">
+    <header className="w-full bg-white dark:bg-slate-950/80 backdrop-blur-md border-b border-slate-200 dark:border-slate-800/80 sticky top-0 z-50">
       {/* Top Identity & Global Action Bar */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between h-16 gap-4">
           {/* Brand Logo & Context */}
           <div className="flex items-center gap-3">
             <Link href="/dashboard" className="flex items-center gap-2.5 group">
-              <div className="p-2 bg-cyan-500/10 border border-cyan-500/30 rounded-xl group-hover:border-cyan-400 transition">
+              <div className="relative p-2 bg-cyan-500/10 border border-cyan-500/30 rounded-xl group-hover:border-cyan-400 transition-all group-hover:shadow-[0_0_20px_-2px_rgba(34,211,238,0.5)]">
                 <ShieldAlert className="w-5 h-5 text-cyan-400" />
               </div>
               <div>
                 <div className="flex items-center gap-2">
-                  <span className="text-sm font-bold text-slate-100 tracking-tight">
-                    CYBEREXPOSURE <span className="text-cyan-400 font-mono">QUANT</span>
+                  <span className="text-sm font-bold tracking-tight bg-gradient-to-r from-slate-900 dark:from-slate-50 to-slate-600 dark:to-slate-300 bg-clip-text text-transparent">
+                    CYBEREXPOSURE{" "}
+                    <span className="bg-gradient-to-r from-cyan-600 dark:from-cyan-300 to-blue-600 dark:to-blue-400 bg-clip-text text-transparent font-mono">
+                      QUANT
+                    </span>
                   </span>
-                  <span className="text-[9px] px-1.5 py-0.5 rounded bg-cyan-500/10 text-cyan-300 border border-cyan-500/20 font-mono">
+                  <span className="text-[9px] px-1.5 py-0.5 rounded bg-cyan-500/10 text-cyan-700 dark:text-cyan-300 border border-cyan-500/30 dark:border-cyan-500/20 font-mono">
                     Open FAIR v3.0
                   </span>
                 </div>
-                <div className="text-[10px] text-slate-400 flex items-center gap-1.5">
+                <div className="text-[10px] text-slate-600 dark:text-slate-400 flex items-center gap-1.5">
                   <Building2 className="w-2.5 h-2.5 text-slate-500" />
                   <span>Enterprise FinTech Platform</span>
                 </div>
@@ -133,7 +140,7 @@ export const Header: React.FC<HeaderProps> = ({
               <button
                 onClick={onRefreshSimulation}
                 disabled={isSimulating}
-                className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 bg-slate-900 border border-slate-700 hover:bg-slate-800 text-slate-300 text-xs font-medium rounded-lg transition"
+                className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 dark:bg-slate-900/80 border border-slate-300 dark:border-slate-700 hover:border-slate-400 dark:hover:border-slate-600 hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs font-medium rounded-lg transition-all"
               >
                 <RefreshCw className={`w-3.5 h-3.5 ${isSimulating ? "animate-spin text-cyan-400" : ""}`} />
                 <span>Run 10k Monte Carlo</span>
@@ -141,12 +148,24 @@ export const Header: React.FC<HeaderProps> = ({
             )}
 
             <button
+              onClick={toggleTheme}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 dark:bg-slate-900/80 border border-slate-300 dark:border-slate-700 hover:border-slate-400 dark:hover:border-slate-600 hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs font-medium rounded-lg transition-all"
+              title={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}
+            >
+              {theme === "dark" ? (
+                <Sun className="w-3.5 h-3.5" />
+              ) : (
+                <Moon className="w-3.5 h-3.5" />
+              )}
+            </button>
+
+            <button
               onClick={handleExportPDF}
               disabled={isExporting}
-              className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition shadow-sm ${
+              className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all shadow-sm active:scale-[0.97] ${
                 exportSuccess
                   ? "bg-emerald-600 text-white"
-                  : "bg-cyan-600 hover:bg-cyan-500 text-slate-950 shadow-cyan-950"
+                  : "bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-400 hover:to-blue-400 text-slate-950 shadow-cyan-900/50 hover:shadow-[0_0_20px_-4px_rgba(34,211,238,0.6)]"
               }`}
             >
               {isExporting ? (
@@ -170,7 +189,7 @@ export const Header: React.FC<HeaderProps> = ({
         </div>
 
         {/* Global Navigation Tabs */}
-        <nav className="flex space-x-1 border-t border-slate-900 overflow-x-auto py-2 scrollbar-none">
+        <nav className="flex space-x-1 border-t border-slate-200 dark:border-slate-900 overflow-x-auto py-2 scrollbar-none">
           {navItems.map((item) => {
             const isActive = pathname === item.href;
             const Icon = item.icon;
@@ -179,14 +198,17 @@ export const Header: React.FC<HeaderProps> = ({
               <Link
                 key={item.href}
                 href={item.href}
-                className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium transition whitespace-nowrap ${
+                className={`relative flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium transition-all whitespace-nowrap ${
                   isActive
-                    ? "bg-slate-900 text-cyan-400 border border-slate-700 font-semibold shadow-inner"
-                    : "text-slate-400 hover:text-slate-200 hover:bg-slate-900/50"
+                    ? "bg-slate-100 dark:bg-slate-900 text-cyan-600 dark:text-cyan-400 border border-slate-300 dark:border-slate-700/80 font-semibold"
+                    : "text-slate-600 dark:text-slate-400 border border-transparent hover:text-slate-900 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-900/50"
                 }`}
               >
-                <Icon className={`w-3.5 h-3.5 ${isActive ? "text-cyan-400" : "text-slate-500"}`} />
+                <Icon className={`w-3.5 h-3.5 ${isActive ? "text-cyan-600 dark:text-cyan-400" : "text-slate-500 dark:text-slate-500"}`} />
                 <span>{item.name}</span>
+                {isActive && (
+                  <span className="absolute -bottom-[9px] left-2 right-2 h-0.5 rounded-full bg-gradient-to-r from-cyan-400 to-blue-500" />
+                )}
               </Link>
             );
           })}

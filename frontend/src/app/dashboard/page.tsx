@@ -38,7 +38,7 @@ const DEFAULT_SCENARIO = {
   secondary_loss: { low: 1000000, mode: 3000000, high: 8000000 },
 };
 
-const CANDIDATE_CONTROLS = [
+const FALLBACK_CONTROLS = [
   { control_id: "CTRL-01", name: "Deploy EDR on Core DB Cluster", category: "Endpoint", cost: 800000, risk_reduction_delta: 1200000, framework_mapping: ["RBI Sec 3.2", "NIST CSF DE.CM"], mandatory: false },
   { control_id: "CTRL-02", name: "Enforce Multi-Factor Authentication (MFA)", category: "IAM", cost: 200000, risk_reduction_delta: 700000, framework_mapping: ["SEBI CSCRF 4.1", "ISO 27001 A.9"], mandatory: true },
   { control_id: "CTRL-03", name: "Deploy Web Application Firewall (WAF)", category: "Network", cost: 500000, risk_reduction_delta: 600000, framework_mapping: ["ISO 27001 A.12", "PCI-DSS 6.6"], mandatory: false },
@@ -53,6 +53,7 @@ export default function DashboardPage() {
   const [optimizationData, setOptimizationData] = useState<any>(null);
   const [optLoading, setOptLoading] = useState<boolean>(false);
   const [historicalData, setHistoricalData] = useState<any[]>([]);
+  const [candidateControls, setCandidateControls] = useState<any[]>(FALLBACK_CONTROLS);
 
   const fetchHistory = async () => {
     try {
@@ -66,7 +67,7 @@ export default function DashboardPage() {
     }
   };
 
-  const triggerOptimization = async (budget: number, baselineEal: number) => {
+  const triggerOptimization = async (budget: number, baselineEal: number, controls: any[]) => {
     setOptLoading(true);
     try {
       const res = await fetch("http://127.0.0.1:8000/api/v1/optimizer/optimize", {
@@ -75,7 +76,7 @@ export default function DashboardPage() {
         body: JSON.stringify({
           budget_limit: budget,
           baseline_eal: baselineEal,
-          candidate_controls: CANDIDATE_CONTROLS,
+          candidate_controls: controls,
         }),
       });
       if (res.ok) {
@@ -89,19 +90,57 @@ export default function DashboardPage() {
     }
   };
 
+  const fetchSuggestedControls = async (scan: any, baselineEal: number): Promise<any[]> => {
+    try {
+      const res = await fetch("http://127.0.0.1:8000/api/v1/optimizer/suggest-controls", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          total_findings: scan.total_findings_parsed,
+          critical_count: scan.critical_findings_count,
+          kev_count: scan.kev_weaponized_count,
+          mean_fair_vuln_prob: scan.mean_fair_vuln_prob,
+          baseline_eal: baselineEal,
+        }),
+      });
+      if (res.ok) return await res.json();
+    } catch (err) {
+      console.error("Control suggestion failed:", err);
+    }
+    return FALLBACK_CONTROLS;
+  };
+
   const executeSimulation = useCallback(async () => {
     setSimLoading(true);
     try {
-      const storedTelemetry = typeof window !== "undefined" ? sessionStorage.getItem("active_scan_telemetry") : null;
+      // Prefer the server-persisted latest scan (survives across sessions/devices)
+      // over the hardcoded demo scenario, so the dashboard reflects real ingested telemetry.
+      const scanRes = await fetch("http://127.0.0.1:8000/api/v1/ingestion/latest");
+      const latestScan = scanRes.ok ? await scanRes.json() : null;
+
       let data;
-      if (storedTelemetry) {
-        const payload = JSON.parse(storedTelemetry);
+      let controls = FALLBACK_CONTROLS;
+
+      if (latestScan && latestScan.total_findings_parsed > 0) {
+        const topFinding = latestScan.findings?.[0];
+        const bridgePayload = {
+          scanner_source: latestScan.detected_scanner,
+          total_findings: latestScan.total_findings_parsed,
+          mean_fair_vuln_prob: latestScan.mean_fair_vuln_prob,
+          critical_count: latestScan.critical_findings_count,
+          kev_count: latestScan.kev_weaponized_count,
+          top_vulnerability: topFinding?.vulnerability_name || "Ingested Vulnerability",
+          target_asset_name: topFinding?.asset_ip || "Enterprise Core Production Cluster",
+        };
         const res = await fetch("http://127.0.0.1:8000/api/v1/risk/simulate-from-scan", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload),
+          body: JSON.stringify(bridgePayload),
         });
         data = await res.json();
+        if (data?.mean_eal) {
+          controls = await fetchSuggestedControls(latestScan, data.mean_eal);
+        }
       } else {
         const res = await fetch("http://127.0.0.1:8000/api/v1/risk/simulate", {
           method: "POST",
@@ -111,8 +150,9 @@ export default function DashboardPage() {
         data = await res.json();
       }
       setSimulationData(data);
+      setCandidateControls(controls);
       if (data?.mean_eal) {
-        triggerOptimization(budgetLimit, data.mean_eal);
+        triggerOptimization(budgetLimit, data.mean_eal, controls);
       }
       fetchHistory();
     } catch (err) {
@@ -130,7 +170,7 @@ export default function DashboardPage() {
   const handleBudgetChange = (newBudget: number) => {
     setBudgetLimit(newBudget);
     if (simulationData?.mean_eal) {
-      triggerOptimization(newBudget, simulationData.mean_eal);
+      triggerOptimization(newBudget, simulationData.mean_eal, candidateControls);
     }
   };
 
@@ -310,17 +350,17 @@ export default function DashboardPage() {
   const riskMitigated = Math.max(0, (simulationData?.mean_eal || 0) - (optimizationData?.residual_eal || 0));
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 p-6 space-y-6">
+    <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 p-6 space-y-6">
       <header className="flex flex-col md:flex-row md:items-center justify-between pb-6 border-b border-slate-800 gap-4">
         <div className="flex items-center gap-2.5">
           <div className="p-2 bg-cyan-500/10 border border-cyan-500/30 rounded-lg">
             <ShieldAlert className="w-6 h-6 text-cyan-400" />
           </div>
           <div>
-            <h1 className="text-xl font-bold tracking-tight text-slate-100">
+            <h1 className="text-xl font-bold tracking-tight text-slate-900 dark:text-slate-100">
               Cyber Exposure & Capital Allocation Dashboard
             </h1>
-            <p className="text-xs text-slate-400">
+            <p className="text-xs text-slate-600 dark:text-slate-400">
               Open FAIR Quantitative Risk Modeling & MILP Investment Optimizer
             </p>
           </div>
@@ -329,7 +369,7 @@ export default function DashboardPage() {
         <button
           onClick={executeSimulation}
           disabled={simLoading}
-          className="flex items-center gap-2 px-3.5 py-2 bg-slate-900 border border-slate-700 hover:bg-slate-800 text-xs font-medium rounded-lg transition"
+          className="flex items-center gap-2 px-3.5 py-2 bg-slate-100 dark:bg-slate-50 dark:bg-slate-900border border-slate-300 dark:border-slate-700 hover:bg-slate-200 dark:hover:bg-slate-800 text-xs font-medium rounded-lg transition text-slate-700 dark:text-slate-300"
         >
           <RefreshCw className={`w-3.5 h-3.5 ${simLoading ? "animate-spin" : ""}`} />
           <span>Re-run 10k Monte Carlo</span>
@@ -338,57 +378,61 @@ export default function DashboardPage() {
 
       {/* Top 4 KPI Metric Cards */}
       <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="bg-slate-900 border border-slate-800 rounded-xl p-4">
-          <div className="flex items-center justify-between text-xs text-slate-400">
+        <div className="group relative bg-white dark:bg-slate-900/80 border border-slate-200 dark:border-slate-800 rounded-xl p-4 overflow-hidden transition-all hover:border-amber-500/40 hover:-translate-y-0.5 hover:shadow-[0_8px_30px_-12px_rgba(251,191,36,0.25)]">
+          <div className="absolute inset-x-0 top-0 h-0.5 bg-gradient-to-r from-amber-500/0 via-amber-400 to-amber-500/0 opacity-0 group-hover:opacity-100 transition-opacity" />
+          <div className="flex items-center justify-between text-xs text-slate-600 dark:text-slate-400">
             <span>Expected Annual Loss (EAL)</span>
-            <AlertTriangle className="w-4 h-4 text-amber-400" />
+            <AlertTriangle className="w-4 h-4 text-amber-600 dark:text-amber-400" />
           </div>
-          <div className="text-2xl font-bold font-mono text-slate-100 mt-2">
+          <div className="text-2xl font-bold font-mono text-slate-900 dark:text-slate-900 dark:text-slate-100 mt-2">
             {simLoading ? "Calculating..." : formatINR(simulationData?.mean_eal || 0)}
           </div>
-          <div className="text-xs text-slate-500 mt-1">Mean stochastic annual exposure</div>
+          <div className="text-xs text-slate-500 dark:text-slate-500 mt-1">Mean stochastic annual exposure</div>
         </div>
 
-        <div className="bg-slate-900 border border-slate-800 rounded-xl p-4">
-          <div className="flex items-center justify-between text-xs text-slate-400">
+        <div className="group relative bg-white dark:bg-slate-900/80 border border-slate-200 dark:border-slate-800 rounded-xl p-4 overflow-hidden transition-all hover:border-red-500/40 hover:-translate-y-0.5 hover:shadow-[0_8px_30px_-12px_rgba(248,113,113,0.25)]">
+          <div className="absolute inset-x-0 top-0 h-0.5 bg-gradient-to-r from-red-500/0 via-red-400 to-red-500/0 opacity-0 group-hover:opacity-100 transition-opacity" />
+          <div className="flex items-center justify-between text-xs text-slate-600 dark:text-slate-400">
             <span>95% Value-at-Risk (VaR)</span>
-            <ShieldAlert className="w-4 h-4 text-red-400" />
+            <ShieldAlert className="w-4 h-4 text-red-600 dark:text-red-400" />
           </div>
-          <div className="text-2xl font-bold font-mono text-red-400 mt-2">
+          <div className="text-2xl font-bold font-mono text-red-600 dark:text-red-400 mt-2">
             {simLoading ? "Calculating..." : formatINR(simulationData?.var_95 || 0)}
           </div>
-          <div className="text-xs text-slate-500 mt-1">1-in-20 year worst-case scenario</div>
+          <div className="text-xs text-slate-500 dark:text-slate-500 mt-1">1-in-20 year worst-case scenario</div>
         </div>
 
-        <div className="bg-slate-900 border border-slate-800 rounded-xl p-4">
-          <div className="flex items-center justify-between text-xs text-slate-400">
+        <div className="group relative bg-white dark:bg-slate-900/80 border border-slate-200 dark:border-slate-800 rounded-xl p-4 overflow-hidden transition-all hover:border-emerald-500/40 hover:-translate-y-0.5 hover:shadow-[0_8px_30px_-12px_rgba(52,211,153,0.25)]">
+          <div className="absolute inset-x-0 top-0 h-0.5 bg-gradient-to-r from-emerald-500/0 via-emerald-400 to-emerald-500/0 opacity-0 group-hover:opacity-100 transition-opacity" />
+          <div className="flex items-center justify-between text-xs text-slate-600 dark:text-slate-400">
             <span>Residual Risk Exposure</span>
-            <TrendingDown className="w-4 h-4 text-emerald-400" />
+            <TrendingDown className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
           </div>
-          <div className="text-2xl font-bold font-mono text-emerald-400 mt-2">
+          <div className="text-2xl font-bold font-mono text-emerald-600 dark:text-emerald-400 mt-2">
             {optLoading || !optimizationData ? "Optimizing..." : formatINR(optimizationData.residual_eal)}
           </div>
-          <div className="text-xs text-slate-500 mt-1">
+          <div className="text-xs text-slate-500 dark:text-slate-500 mt-1">
             {optimizationData ? `Reduced by ${formatINR(optimizationData.total_risk_reduced)}` : "--"}
           </div>
         </div>
 
-        <div className="bg-slate-900 border border-slate-800 rounded-xl p-4">
-          <div className="flex items-center justify-between text-xs text-slate-400">
+        <div className="group relative bg-white dark:bg-slate-900/80 border border-slate-200 dark:border-slate-800 rounded-xl p-4 overflow-hidden transition-all hover:border-cyan-500/40 hover:-translate-y-0.5 hover:shadow-[0_8px_30px_-12px_rgba(34,211,238,0.25)]">
+          <div className="absolute inset-x-0 top-0 h-0.5 bg-gradient-to-r from-cyan-500/0 via-cyan-400 to-cyan-500/0 opacity-0 group-hover:opacity-100 transition-opacity" />
+          <div className="flex items-center justify-between text-xs text-slate-600 dark:text-slate-400">
             <span>Portfolio ROSI</span>
-            <ShieldCheck className="w-4 h-4 text-cyan-400" />
+            <ShieldCheck className="w-4 h-4 text-cyan-600 dark:text-cyan-400" />
           </div>
-          <div className="text-2xl font-bold font-mono text-cyan-400 mt-2">
+          <div className="text-2xl font-bold font-mono text-cyan-600 dark:text-cyan-400 mt-2">
             {optLoading || !optimizationData ? "--" : `${optimizationData.portfolio_rosi.toFixed(1)}%`}
           </div>
-          <div className="text-xs text-slate-500 mt-1">Net ROI on security spend</div>
+          <div className="text-xs text-slate-500 dark:text-slate-500 mt-1">Net ROI on security spend</div>
         </div>
       </section>
 
       {/* Row 1: FAIR Exceedance Curve (7 Cols) + Budget Optimizer (5 Cols) */}
       <section className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         <div className="lg:col-span-7 flex flex-col gap-4">
-          <div className="w-full h-80 bg-slate-900 border border-slate-800 rounded-xl p-4 flex flex-col justify-between">
+          <div className="w-full h-80 bg-white dark:bg-slate-50 dark:bg-slate-900border border-slate-200 dark:border-slate-800 rounded-xl p-4 flex flex-col justify-between">
             <div className="flex items-center justify-between border-b border-slate-800 pb-2">
               <h3 className="text-sm font-semibold text-slate-200">
                 Loss Exceedance Curve (10,000 Monte Carlo Iterations)
@@ -409,11 +453,11 @@ export default function DashboardPage() {
         </div>
 
         <div className="lg:col-span-5 flex flex-col gap-4">
-          <div className="w-full bg-slate-900 border border-slate-800 rounded-xl p-5 flex flex-col gap-5">
+          <div className="w-full bg-white dark:bg-slate-50 dark:bg-slate-900border border-slate-200 dark:border-slate-800 rounded-xl p-5 flex flex-col gap-5">
             <div className="flex items-center justify-between">
               <div>
                 <h3 className="text-sm font-semibold text-slate-200">Security Investment Optimizer</h3>
-                <p className="text-xs text-slate-400">0-1 Knapsack MILP budget allocation</p>
+                <p className="text-xs text-slate-600 dark:text-slate-400">0-1 Knapsack MILP budget allocation</p>
               </div>
               <div className="text-right">
                 <div className="text-xs text-slate-400 font-medium">Allocated Budget</div>
@@ -433,8 +477,8 @@ export default function DashboardPage() {
             />
 
             <div className="grid grid-cols-3 gap-3 border-t border-slate-800 pt-4">
-              <div className="bg-slate-950/60 p-3 rounded-lg border border-slate-800/80">
-                <div className="flex items-center gap-1.5 text-xs text-slate-400">
+              <div className="bg-slate-50 dark:bg-slate-950/60 p-3 rounded-lg border border-slate-800/80">
+                <div className="flex items-center gap-1.5 text-xs text-slate-600 dark:text-slate-400">
                   <DollarSign className="w-3.5 h-3.5 text-cyan-400" />
                   <span>Optimal Spend</span>
                 </div>
@@ -442,8 +486,8 @@ export default function DashboardPage() {
                   {formatINR(optimizationData?.total_spend || 0)}
                 </div>
               </div>
-              <div className="bg-slate-950/60 p-3 rounded-lg border border-slate-800/80">
-                <div className="flex items-center gap-1.5 text-xs text-slate-400">
+              <div className="bg-slate-50 dark:bg-slate-950/60 p-3 rounded-lg border border-slate-800/80">
+                <div className="flex items-center gap-1.5 text-xs text-slate-600 dark:text-slate-400">
                   <TrendingDown className="w-3.5 h-3.5 text-emerald-400" />
                   <span>Risk Reduced</span>
                 </div>
@@ -451,8 +495,8 @@ export default function DashboardPage() {
                   {formatINR(riskMitigated)}
                 </div>
               </div>
-              <div className="bg-slate-950/60 p-3 rounded-lg border border-slate-800/80">
-                <div className="flex items-center gap-1.5 text-xs text-slate-400">
+              <div className="bg-slate-50 dark:bg-slate-950/60 p-3 rounded-lg border border-slate-800/80">
+                <div className="flex items-center gap-1.5 text-xs text-slate-600 dark:text-slate-400">
                   <ShieldCheck className="w-3.5 h-3.5 text-amber-400" />
                   <span>Projected ROSI</span>
                 </div>
@@ -468,7 +512,7 @@ export default function DashboardPage() {
       {/* Row 2: Month-over-Month Risk Trajectory (7 Cols) + Control Allocation Roadmap (5 Cols) */}
       <section className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         {/* Month-over-Month Risk Reduction Trajectory Chart */}
-        <div className="lg:col-span-7 bg-slate-900 border border-slate-800 rounded-xl p-5 flex flex-col justify-between">
+        <div className="lg:col-span-7 bg-white dark:bg-slate-50 dark:bg-slate-900border border-slate-200 dark:border-slate-800 rounded-xl p-5 flex flex-col justify-between">
           <div className="flex items-center justify-between border-b border-slate-800 pb-3">
             <div className="flex items-center gap-2">
               <History className="w-4 h-4 text-cyan-400" />
@@ -492,7 +536,7 @@ export default function DashboardPage() {
         </div>
 
         {/* Control Allocation Roadmap */}
-        <div className="lg:col-span-5 bg-slate-900 border border-slate-800 rounded-xl p-4 flex flex-col gap-3">
+        <div className="lg:col-span-5 bg-white dark:bg-slate-50 dark:bg-slate-900border border-slate-200 dark:border-slate-800 rounded-xl p-4 flex flex-col gap-3">
           <div className="flex items-center justify-between border-b border-slate-800 pb-2">
             <div className="flex items-center gap-2">
               <Layers className="w-4 h-4 text-cyan-400" />
@@ -509,7 +553,7 @@ export default function DashboardPage() {
             {optimizationData?.selected_controls?.map((ctrl: any) => (
               <div
                 key={ctrl.control_id}
-                className="flex items-center justify-between p-2.5 bg-slate-950/70 border border-emerald-950/60 rounded-lg text-xs"
+                className="flex items-center justify-between p-2.5 bg-slate-50 dark:bg-slate-950/70 border border-emerald-950/60 rounded-lg text-xs"
               >
                 <div className="flex items-center gap-2">
                   <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
@@ -527,7 +571,7 @@ export default function DashboardPage() {
             {optimizationData?.deferred_controls?.map((ctrl: any) => (
               <div
                 key={ctrl.control_id}
-                className="flex items-center justify-between p-2.5 bg-slate-950/30 border border-slate-800/40 rounded-lg text-xs opacity-50"
+                className="flex items-center justify-between p-2.5 bg-slate-50 dark:bg-slate-950/30 border border-slate-800/40 rounded-lg text-xs opacity-50"
               >
                 <div className="flex items-center gap-2">
                   <XCircle className="w-4 h-4 text-slate-500 shrink-0" />

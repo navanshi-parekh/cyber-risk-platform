@@ -3,18 +3,43 @@ Natural Language CISO Executive Query & Decision-Support Endpoint.
 Provides conversational AI analysis for executive leadership, translating technical
 vulnerabilities, FAIR quantitative exposure, Knapsack allocations, and statutory
 compliance (RBI / SEBI CSCRF) into board-level strategic answers.
+
+Grounded in live data: the latest persisted Monte Carlo run, the latest ingested
+scan, and the current infrastructure posture -- not a static demo snapshot.
 """
 
+import json
+import logging
 from typing import List, Dict, Any, Optional
 from datetime import datetime
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, status, Depends
 from pydantic import BaseModel, Field
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select, desc
+import httpx
 
+from backend.app.core.config import settings
+from backend.app.core.database import get_db
+from backend.app.models.simulation_run import SimulationRun
+from backend.app.models.ingested_scan import IngestedScan
+from backend.app.api.v1.endpoints.compliance import _build_telemetry
 from backend.app.services.compliance.framework_mapper import StatutoryComplianceEngine
 from backend.app.services.optimizer.milp_solver import SecurityInvestmentOptimizer, CandidateControl
-from backend.app.services.fair_engine.monte_carlo import FairMonteCarloEngine, ScenarioInput, LossParameters
+from backend.app.services.optimizer.control_recommender import derive_controls_from_scan
 
+logger = logging.getLogger(__name__)
 router = APIRouter()
+
+OLLAMA_API_URL = "http://localhost:11434/api/chat"
+OLLAMA_MODEL = "mistral"
+
+_FALLBACK_CONTROLS = [
+    CandidateControl("CTRL-01", "Deploy EDR on Core DB Cluster", "Endpoint", 800000, 1200000, ["RBI Sec 3.2", "NIST CSF DE.CM"], False),
+    CandidateControl("CTRL-02", "Enforce Multi-Factor Authentication (MFA)", "IAM", 200000, 700000, ["SEBI CSCRF 4.1", "ISO 27001 A.9"], True),
+    CandidateControl("CTRL-03", "Deploy Web Application Firewall (WAF)", "Network", 500000, 600000, ["SEBI CSCRF 7.3"], False),
+    CandidateControl("CTRL-04", "Automated Patch Automation Engine", "Vulnerability", 400000, 550000, ["RBI Sec 5.1"], False),
+    CandidateControl("CTRL-05", "Employee Anti-Phishing Training", "Human", 150000, 300000, ["NIST CSF PR.AT"], False),
+]
 
 
 # ---------------------------------------------------------------------------
@@ -66,69 +91,153 @@ class CISOExecutiveAgent:
         return f"₹ {amount:,.0f}"
 
     @classmethod
-    def process_query(cls, query: str, budget_limit: float = 1000000.0) -> AgentQueryResponse:
+    def _rule_based_summary(cls, query: str, budget_limit: float, ctx: Dict[str, Any]) -> str:
+        """Keyword-templated fallback used when no LLM is configured or reachable."""
         norm_query = query.lower()
+        opt = ctx["optimizer"]
+        comp = ctx["compliance"]
 
-        # 1. Gather baseline posture metrics
-        baseline_eal = 2901400.0   # ₹ 29.01 L
-        var_95 = 12300000.0        # ₹ 1.23 Cr
-        top_asset = "Core Banking Oracle DB Cluster (10.14.20.15)"
-        critical_cves = ["CVE-2021-44228 (Log4Shell)", "CVE-2024-3094 (XZ Backdoor)"]
+        if any(w in norm_query for w in ["biggest", "highest", "top risk", "critical", "danger"]):
+            return (
+                f"Our primary financial risk exposure stems from **{ctx['scenario_name']}** on asset **{ctx['top_risk_asset']}**, "
+                f"representing an Expected Annual Loss (EAL) of **{cls._format_inr(ctx['baseline_expected_annual_loss_inr'])}** and a "
+                f"95% Value-at-Risk (VaR) of **{cls._format_inr(ctx['value_at_risk_95_inr'])}**. "
+                f"This is driven by {', '.join(ctx['top_cves'])}."
+            )
+        if any(w in norm_query for w in ["rbi", "sebi", "compliance", "fine", "penalty", "regulatory"]):
+            top_gaps = ", ".join(f"**{c['section']}** ({c['title']})" for c in comp["failed_clauses"][:2]) or "no open mandates"
+            return (
+                f"Our current regulatory compliance rating is **{comp['score_percent']}%** across RBI and SEBI CSCRF frameworks, "
+                f"carrying a secondary fine liability of **{cls._format_inr(comp['total_penalty_exposure_inr'])}**. "
+                f"The highest regulatory risk is non-compliance with {top_gaps}."
+            )
+        if any(w in norm_query for w in ["spend", "budget", "allocate", "invest", "recommend", "buy", "roi", "rosi"]):
+            return (
+                f"With an allocated capital budget of **{cls._format_inr(budget_limit)}**, the MILP optimization model "
+                f"recommends deploying **{opt['controls_selected']} controls**, mitigating **{cls._format_inr(opt['total_risk_reduced_inr'])}** "
+                f"in annual loss exposure. This yields a projected **Portfolio ROSI of {opt['portfolio_rosi_percent']:.1f}%**, "
+                f"reducing our net residual EAL to **{cls._format_inr(opt['residual_eal_inr'])}**."
+            )
+        return (
+            f"Enterprise cyber exposure currently stands at **{cls._format_inr(ctx['baseline_expected_annual_loss_inr'])} EAL** with a "
+            f"1-in-20 year worst-case 95% VaR of **{cls._format_inr(ctx['value_at_risk_95_inr'])}**. Allocating "
+            f"**{cls._format_inr(budget_limit)}** toward prioritized controls will satisfy core **RBI/SEBI** mandates while "
+            f"eliminating **{cls._format_inr(opt['total_risk_reduced_inr'])}** of quantifiable risk."
+        )
 
-        # 2. Gather statutory audit posture
-        default_telemetry = {
-            "has_edr_installed": False,
-            "unpatched_critical_cves": 2,
-            "mfa_enforced_on_admins": True,
-            "waf_active_blocking": False,
-            "vapt_sla_breached": False,
-            "immutable_backups_configured": True,
-            "soc_telemetry_integrated": False,
-        }
-        compliance_audit = StatutoryComplianceEngine.evaluate_all(default_telemetry)
+    @classmethod
+    async def _generate_summary(cls, query: str, budget_limit: float, ctx: Dict[str, Any]) -> str:
+        """Calls local Ollama Mistral with live data as grounding context.
+        Falls back to rule-based template if Ollama is unreachable or call fails."""
+        system_prompt = (
+            "You are the AI CISO decision-support assistant embedded in a bank's cyber risk "
+            "quantification platform (Open FAIR + MILP capital allocation, RBI/SEBI CSCRF compliance). "
+            "Answer the executive's question directly and specifically using ONLY the LIVE_DATA JSON "
+            "provided below -- do not invent figures, assets, CVEs, or controls not present in it. "
+            "Write for a board/CFO audience: 3-5 sentences, confident and concrete, bold the key rupee "
+            "figures and percentages with **markdown**. If the data doesn't contain something needed to "
+            "answer, say so plainly instead of guessing.\n\n"
+            f"LIVE_DATA:\n{json.dumps(ctx, indent=2)}"
+        )
+
+        try:
+            async with httpx.AsyncClient(timeout=120.0) as client:
+                response = await client.post(
+                    OLLAMA_API_URL,
+                    json={
+                        "model": OLLAMA_MODEL,
+                        "messages": [
+                            {"role": "system", "content": system_prompt},
+                            {"role": "user", "content": query},
+                        ],
+                        "stream": False,
+                    },
+                )
+                response.raise_for_status()
+                data = response.json()
+                text = data.get("message", {}).get("content", "").strip()
+                return text or cls._rule_based_summary(query, budget_limit, ctx)
+        except httpx.ConnectError:
+            logger.warning("Ollama connection failed; falling back to rule-based agent summary.")
+        except httpx.TimeoutException:
+            logger.warning("Ollama timeout; falling back to rule-based agent summary.")
+        except Exception as e:
+            logger.warning("Ollama error: %s; falling back to rule-based agent summary.", str(e))
+
+        return cls._rule_based_summary(query, budget_limit, ctx)
+
+    @classmethod
+    async def process_query(cls, query: str, budget_limit: float, db: AsyncSession) -> AgentQueryResponse:
+        # 1. Latest live Monte Carlo run (falls back to a labeled baseline if none exists yet)
+        run_result = await db.execute(select(SimulationRun).order_by(desc(SimulationRun.timestamp)).limit(1))
+        latest_run = run_result.scalars().first()
+        baseline_eal = latest_run.mean_eal if latest_run else 2901400.0
+        var_95 = latest_run.var_95 if latest_run else 12300000.0
+        scenario_label = latest_run.scenario_name if latest_run else "Core Banking Cluster Ransomware Exposure (no live run yet)"
+
+        # 2. Latest ingested scan drives the top-risk asset/CVE narrative and real candidate controls
+        scan_result = await db.execute(select(IngestedScan).order_by(desc(IngestedScan.uploaded_at)).limit(1))
+        latest_scan = scan_result.scalars().first()
+
+        if latest_scan and latest_scan.total_findings_parsed > 0:
+            findings_sorted = sorted(latest_scan.findings or [], key=lambda f: f.get("cvss_score", 0), reverse=True)
+            top_finding = findings_sorted[0] if findings_sorted else None
+            top_asset = top_finding.get("asset_ip", "Unknown Asset") if top_finding else "Unknown Asset"
+            critical_cves = [
+                f"{f.get('cve_list', ['N/A'])[0]} ({f.get('vulnerability_name', 'Unknown')})"
+                for f in findings_sorted[:2]
+                if f.get("cve_list")
+            ] or ["No CVEs on record"]
+            candidate_controls = derive_controls_from_scan(
+                total_findings=latest_scan.total_findings_parsed,
+                critical_count=latest_scan.critical_findings_count,
+                kev_count=latest_scan.kev_weaponized_count,
+                mean_fair_vuln_prob=latest_scan.mean_fair_vuln_prob,
+                baseline_eal=baseline_eal,
+            )
+        else:
+            top_asset = "No scan ingested yet — run Technical SOC upload for asset-level detail"
+            critical_cves = ["No scan ingested yet"]
+            candidate_controls = _FALLBACK_CONTROLS
+
+        # 3. Live statutory compliance posture (real infra posture + real scan-derived vuln clauses)
+        telemetry = await _build_telemetry(db)
+        compliance_audit = StatutoryComplianceEngine.evaluate_all(telemetry)
         penalty_exposure = compliance_audit["total_penalty_exposure_inr"]
 
-        # 3. Solve for optimal control allocation
-        candidate_controls = [
-            CandidateControl("CTRL-01", "Deploy EDR on Core DB Cluster", "Endpoint", 800000, 1200000, ["RBI Sec 3.2", "NIST CSF DE.CM"]),
-            CandidateControl("CTRL-02", "Enforce Multi-Factor Authentication (MFA)", "IAM", 200000, 700000, ["SEBI CSCRF 4.1", "ISO 27001 A.9"], mandatory=True),
-            CandidateControl("CTRL-03", "Deploy Web Application Firewall (WAF)", "Network", 500000, 600000, ["SEBI CSCRF 7.3"]),
-            CandidateControl("CTRL-04", "Automated Patch Automation Engine", "Vulnerability", 400000, 550000, ["RBI Sec 5.1"]),
-            CandidateControl("CTRL-05", "Employee Anti-Phishing Training", "Human", 150000, 300000, ["NIST CSF PR.AT"]),
-        ]
+        # 4. Live MILP optimizer run over the real candidate set
         solver = SecurityInvestmentOptimizer()
         opt_result = solver.optimize_allocation(candidate_controls, budget_limit=budget_limit, baseline_eal=baseline_eal)
 
-        # 4. Formulate contextual natural language answers
-        if any(w in norm_query for w in ["biggest", "highest", "top risk", "critical", "danger"]):
-            summary = (
-                f"Our primary financial risk exposure stems from the **{top_asset}**, representing an Expected "
-                f"Annual Loss (EAL) of **{cls._format_inr(baseline_eal)}** and a 95% Value-at-Risk (VaR) of "
-                f"**{cls._format_inr(var_95)}**. This is driven by unpatched remote code execution vulnerabilities "
-                f"({', '.join(critical_cves)}) paired with missing endpoint detection telemetry."
-            )
-        elif any(w in norm_query for w in ["rbi", "sebi", "compliance", "fine", "penalty", "regulatory"]):
-            summary = (
-                f"Our current regulatory compliance rating is **{compliance_audit['compliance_score']}%** across "
-                f"RBI and SEBI CSCRF frameworks, carrying a secondary fine liability of **{cls._format_inr(penalty_exposure)}**. "
-                f"The highest regulatory risk is non-compliance with **RBI Annex 1 Sec 3.2** (Missing EDR) and "
-                f"**RBI Annex 2 Sec 5.1** (Unresolved CVSS ≥ 9.0 SLA breaches)."
-            )
-        elif any(w in norm_query for w in ["spend", "budget", "allocate", "invest", "recommend", "buy", "roi", "rosi"]):
-            summary = (
-                f"With an allocated capital budget of **{cls._format_inr(budget_limit)}**, the MILP optimization model "
-                f"recommends deploying **{len(opt_result.selected_controls)} controls**, mitigating **{cls._format_inr(opt_result.total_risk_reduced)}** "
-                f"in annual loss exposure. This yields a projected **Portfolio ROSI of {opt_result.portfolio_rosi:.1f}%**, "
-                f"reducing our net residual EAL to **{cls._format_inr(opt_result.residual_eal)}**."
-            )
-        else:
-            # Default holistic CISO brief
-            summary = (
-                f"Enterprise cyber exposure currently stands at **{cls._format_inr(baseline_eal)} EAL** with a 1-in-20 year "
-                f"worst-case 95% VaR of **{cls._format_inr(var_95)}**. Allocating **{cls._format_inr(budget_limit)}** toward "
-                f"prioritized endpoint and IAM controls will satisfy core **RBI/SEBI** mandates while eliminating "
-                f"**{cls._format_inr(opt_result.total_risk_reduced)}** of quantifiable risk."
-            )
+        # 5. Ground an LLM in the live figures gathered above for a genuine natural-language
+        # answer to the specific question asked (falls back to a rule-based template if no
+        # ANTHROPIC_API_KEY is configured, or if the API call itself fails).
+        failed_clauses = [c for c in compliance_audit["clauses"] if c["status"] == "NON_COMPLIANT"]
+        live_context = {
+            "scenario_name": scenario_label,
+            "top_risk_asset": top_asset,
+            "top_cves": critical_cves,
+            "baseline_expected_annual_loss_inr": round(baseline_eal, 2),
+            "value_at_risk_95_inr": round(var_95, 2),
+            "requested_budget_inr": budget_limit,
+            "optimizer": {
+                "solver_status": opt_result.solver_status,
+                "controls_selected": len(opt_result.selected_controls),
+                "total_spend_inr": opt_result.total_spend,
+                "total_risk_reduced_inr": opt_result.total_risk_reduced,
+                "residual_eal_inr": opt_result.residual_eal,
+                "portfolio_rosi_percent": opt_result.portfolio_rosi,
+                "selected_controls": opt_result.selected_controls,
+                "deferred_controls": opt_result.deferred_controls,
+            },
+            "compliance": {
+                "score_percent": compliance_audit["compliance_score"],
+                "total_penalty_exposure_inr": penalty_exposure,
+                "failed_clauses": failed_clauses,
+            },
+        }
+
+        summary = await cls._generate_summary(query, budget_limit, live_context)
 
         recommendations = [
             StrategicRecommendation(
@@ -170,11 +279,11 @@ class CISOExecutiveAgent:
     status_code=status.HTTP_200_OK,
     summary="Executive Natural Language Query & Decision-Support",
 )
-async def ask_executive_ciso_agent(payload: AgentQueryRequest):
+async def ask_executive_ciso_agent(payload: AgentQueryRequest, db: AsyncSession = Depends(get_db)):
     """
     Accepts executive natural language questions, contextualizes organizational risk
     metrics (FAIR stochastic curves, Knapsack allocations, and statutory audit data),
-    and returns a structured board briefing.
+    and returns a structured board briefing grounded in the latest live data.
     """
     if not payload.query.strip():
         raise HTTPException(
@@ -183,12 +292,13 @@ async def ask_executive_ciso_agent(payload: AgentQueryRequest):
         )
 
     try:
-        return CISOExecutiveAgent.process_query(
+        return await CISOExecutiveAgent.process_query(
             query=payload.query,
             budget_limit=payload.budget_limit or 1000000.0,
+            db=db,
         )
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Executive reasoning engine error: {str(e)}",
+            detail=f"Agent processing failed: {str(e)}",
         )

@@ -5,9 +5,14 @@ and enriches CVEs with live/cached EPSS and CISA KEV exploitability scores.
 """
 
 from typing import List, Dict, Any, Optional
-from fastapi import APIRouter, UploadFile, File, Form, HTTPException, status
+from datetime import datetime
+from fastapi import APIRouter, UploadFile, File, Form, HTTPException, status, Depends
 from pydantic import BaseModel, Field
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select, desc
 
+from backend.app.core.database import get_db
+from backend.app.models.ingested_scan import IngestedScan
 from backend.app.services.parsers.openvas_parser import OpenVASParser
 from backend.app.services.parsers.nessus_parser import NessusParser
 from backend.app.services.threat_engine.epss_client import EPSSClient
@@ -67,6 +72,7 @@ async def upload_and_process_scan(
         default=False,
         description="Whether the target asset subnet is exposed to the public internet",
     ),
+    db: AsyncSession = Depends(get_db),
 ):
     """
     Ingests an OpenVAS XML or Nessus JSON report, normalizes technical findings,
@@ -189,6 +195,19 @@ async def upload_and_process_scan(
     total = len(enriched_records)
     mean_vuln = round(accumulated_vuln_prob / total, 4) if total > 0 else 0.0
 
+    # Persist as the latest server-side scan so it survives across sessions/devices.
+    db_scan = IngestedScan(
+        filename=file.filename,
+        detected_scanner=detected_type,
+        total_findings_parsed=total,
+        critical_findings_count=critical_count,
+        kev_weaponized_count=kev_count,
+        mean_fair_vuln_prob=mean_vuln,
+        findings=[r.model_dump() for r in enriched_records],
+    )
+    db.add(db_scan)
+    await db.commit()
+
     return IngestionSummary(
         filename=file.filename,
         detected_scanner=detected_type,
@@ -197,4 +216,33 @@ async def upload_and_process_scan(
         kev_weaponized_count=kev_count,
         mean_fair_vuln_prob=mean_vuln,
         findings=enriched_records,
+    )
+
+
+@router.get(
+    "/latest",
+    response_model=Optional[IngestionSummary],
+    summary="Fetch Most Recently Ingested Scan",
+)
+async def get_latest_ingested_scan(db: AsyncSession = Depends(get_db)):
+    """
+    Returns the most recently uploaded & enriched scan, persisted server-side,
+    so the Executive Dashboard reflects real ingested telemetry across sessions.
+    Returns null if no scan has been ingested yet.
+    """
+    result = await db.execute(
+        select(IngestedScan).order_by(desc(IngestedScan.uploaded_at)).limit(1)
+    )
+    latest = result.scalars().first()
+    if not latest:
+        return None
+
+    return IngestionSummary(
+        filename=latest.filename,
+        detected_scanner=latest.detected_scanner,
+        total_findings_parsed=latest.total_findings_parsed,
+        critical_findings_count=latest.critical_findings_count,
+        kev_weaponized_count=latest.kev_weaponized_count,
+        mean_fair_vuln_prob=latest.mean_fair_vuln_prob,
+        findings=latest.findings,
     )
